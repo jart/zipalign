@@ -141,9 +141,7 @@ static bool HasArgument(char **a, const char *x) {
 
 int main(int argc, char *argv[]) {
 
-    if ( HasArgument(argv, "-h") ||
-         HasArgument(argv, "-help") ||
-         HasArgument(argv, "--help") ) {
+    if (HasArgument(argv, "-h") || HasArgument(argv, "-help") || HasArgument(argv, "--help")) {
         execlp("man", "man", "zipalign", NULL);
         exit(127);
     }
