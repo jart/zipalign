@@ -16,13 +16,10 @@ jobs:
         compiler: [gcc, clang]
     steps:
       - uses: actions/checkout@v4
-
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-
       - name: Build with ${{ matrix.compiler }}
         run: make CC=${{ matrix.compiler }}
-
       - name: Run tests
         run: ./check.sh
 
@@ -31,10 +28,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Build
         run: make
-
       - name: Run tests
         run: ./check.sh
 
@@ -56,15 +51,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Build and test on FreeBSD
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y gmake
           run: |
-            gmake
-            ./check.sh
+            make check
 
   build-with-sanitizers:
     name: Linux (sanitizers)
@@ -77,13 +69,10 @@ jobs:
           - undefined
     steps:
       - uses: actions/checkout@v4
-
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-
       - name: Build with ${{ matrix.sanitizer }} sanitizer
-        run: make CC=clang CFLAGS="-O -g -fsanitize=${{ matrix.sanitizer }}" LDFLAGS="-fsanitize=${{ matrix.sanitizer }}"
-
+        run: make CC=clang CFLAGS="-O0 -g -fsanitize=${{ matrix.sanitizer }}" LDFLAGS="-fsanitize=${{ matrix.sanitizer }}"
       - name: Run tests
         run: ./check.sh
 
@@ -92,13 +81,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-
       - name: Build with full optimizations
         run: make CFLAGS="-O3 -march=native -flto" LDFLAGS="-flto"
-
       - name: Run tests
         run: ./check.sh
 
@@ -107,11 +93,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: s390x
-
       - name: Build and test on s390x
         run: |
           docker run --rm --platform linux/s390x -v "$PWD:/work" -w /work alpine:latest sh -c '
