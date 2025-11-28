@@ -270,6 +270,7 @@ int main(int argc, char *argv[]) {
     int new_count = 0;
     off_t new_index = 0;
     unsigned entry_index, entry_offset;
+    uint8_t *new_cdir = Malloc(cdirsize);
     for (entry_index = entry_offset = 0;
          entry_index < cnt && entry_offset + kZipCfileHdrMinSize <= cdirsize &&
          entry_offset + ZIP_CFILE_HDRSIZE(cdir + entry_offset) <= cdirsize;
@@ -281,19 +282,23 @@ int main(int argc, char *argv[]) {
         bool found = false;
         for (int i = optind; i < argc; ++i)
             if (ZIP_CFILE_NAMESIZE(cdir + entry_offset) == strlen(names[i]) &&
-                !memcmp(ZIP_CFILE_NAME(cdir + entry_offset), names[i],
-                        ZIP_CFILE_NAMESIZE(cdir + entry_offset))) {
+                (!ZIP_CFILE_NAMESIZE(cdir + entry_offset) ||
+                 !memcmp(ZIP_CFILE_NAME(cdir + entry_offset), names[i],
+                         ZIP_CFILE_NAMESIZE(cdir + entry_offset)))) {
                 found = true;
                 break;
             }
 
         // copy back central directory entry
         if (!found) {
-            memmove(cdir + new_index, cdir + entry_offset, ZIP_CFILE_HDRSIZE(cdir + entry_offset));
+            memcpy(new_cdir + new_index, cdir + entry_offset,
+                   ZIP_CFILE_HDRSIZE(cdir + entry_offset));
             new_index += ZIP_CFILE_HDRSIZE(cdir + new_index);
             ++new_count;
         }
     }
+    free(cdir);
+    cdir = new_cdir;
     cdirsize = new_index;
     cnt = new_count;
 
