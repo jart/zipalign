@@ -1,0 +1,3 @@
+#!/bin/sh
+echo zipalign is configured. congratulations
+echo now run make

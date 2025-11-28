@@ -1,8 +1,9 @@
+CFLAGS = -O
 LDLIBS = -lz
 PREFIX = /usr/local
 
 zipalign: zipalign.o
-zipalign.o: zipalign.c zip.h
+zipalign.o: zipalign.c zip.h Makefile
 
 .PHONY: clean
 clean:
