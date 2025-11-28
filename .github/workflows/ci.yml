@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-linux:
+    name: Linux (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Build with ${{ matrix.compiler }}
+        run: make CC=${{ matrix.compiler }}
+
+      - name: Run tests
+        run: ./check.sh
+
+  build-macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make
+
+      - name: Run tests
+        run: ./check.sh
+
+  build-linux-musl:
+    name: Linux (musl/Alpine)
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: apk add --no-cache build-base zlib-dev
+
+      - name: Build
+        run: make
+
+      - name: Run tests
+        run: ./check.sh
+
+  build-freebsd:
+    name: FreeBSD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y gmake
+          run: |
+            gmake
+            ./check.sh
+
+  build-with-sanitizers:
+    name: Linux (sanitizers)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer:
+          - address
+          - undefined
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Build with ${{ matrix.sanitizer }} sanitizer
+        run: make CC=clang CFLAGS="-O -g -fsanitize=${{ matrix.sanitizer }}" LDFLAGS="-fsanitize=${{ matrix.sanitizer }}"
+
+      - name: Run tests
+        run: ./check.sh
+
+  build-optimized:
+    name: Linux (optimized)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Build with full optimizations
+        run: make CFLAGS="-O3 -march=native -flto" LDFLAGS="-flto"
+
+      - name: Run tests
+        run: ./check.sh
+
+  build-32bit:
+    name: Linux (32-bit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib zlib1g-dev:i386
+
+      - name: Build 32-bit
+        run: make CFLAGS="-O -m32" LDFLAGS="-m32"
+
+      - name: Run tests
+        run: ./check.sh

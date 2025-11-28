@@ -125,7 +125,7 @@ static void GetDosLocalTime(int64_t utcunixts, uint16_t *out_time, uint16_t *out
     *out_date = DOS_DATE(tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
 }
 
-static int NormalizeMode(int mode) {
+static uint32_t NormalizeMode(int mode) {
     int res = mode & 0170000;
     if (mode & 0111)
         res |= 0111;
@@ -252,12 +252,18 @@ int main(int argc, char *argv[]) {
     // create array of zip entry names
     char **names = Malloc(sizeof(char *) * argc);
     for (int i = optind; i < argc; ++i) {
-        names[i] = StrDup(argv[i]);
-        if (flag_junk)
-            names[i] = basename(names[i]);
-        else
-            while (*names[i] == '/')
-                ++names[i];
+        char *t1, *t2;
+        if (flag_junk) {
+            t1 = StrDup(argv[i]);
+            t2 = StrDup(basename(t1));
+            free(t1);
+        } else {
+            t1 = argv[i];
+            while (*t1 == '/')
+                ++t1;
+            t2 = StrDup(t1);
+        }
+        names[i] = t2;
     }
 
     // verify there's no duplicate zip asset names
@@ -482,6 +488,9 @@ int main(int argc, char *argv[]) {
     }
     free(iobuf);
     free(cdbuf);
+    for (int i = optind; i < argc; ++i)
+        free(names[i]);
+    free(names);
 
     // write out central directory
     if (Pwrite(zfd, cdir, cdirsize, zsize) != cdirsize)

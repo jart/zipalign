@@ -9,6 +9,10 @@ zipalign.o: zipalign.c zip.h Makefile
 clean:
 	rm -f zipalign.o zipalign
 
+.PHONY: check
+check: zipalign
+	./check.sh
+
 .PHONY: install
 install: zipalign zipalign.1
 	mkdir -p $(PREFIX)/bin
