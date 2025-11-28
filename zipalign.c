@@ -68,10 +68,12 @@ static void *Malloc(size_t n) {
 }
 
 static char *StrDup(const char *s) {
-    char *p;
-    if (!(p = strdup(s)))
+    char *s2;
+    size_t len;
+    len = strlen(s);
+    if (!(s2 = malloc(len + 1)))
         DieOom();
-    return p;
+    return memcpy(s2, s, len + 1);
 }
 
 static void *Realloc(void *p, size_t n) {
@@ -80,15 +82,51 @@ static void *Realloc(void *p, size_t n) {
     return p;
 }
 
+static void *MempCpy(void *dst, const void *src, size_t n) {
+    memmove(dst, src, n);
+    return (char *)dst + n;
+}
+
+static void *Valloc(size_t n) {
+#if _POSIX_C_SOURCE + 0 >= 200112L
+    void *p; // let's hope i/o goes faster if we page align
+    if (posix_memalign(&p, sysconf(_SC_PAGESIZE), n))
+        DieOom();
+    return p;
+#else
+    return Malloc(n); // zipalign doesn't actually need it
+#endif
+}
+
+static ssize_t Pread(int fd, void *buf, size_t count, off_t offset) {
+#if _XOPEN_SOURCE + 0 >= 500 || _POSIX_C_SOURCE + 0 >= 200809L
+    return pread(fd, buf, count, offset);
+#else // zipalign doesn't actually need it to be atomic
+    if (lseek(fd, offset, SEEK_SET) == -1)
+        return -1;
+    return read(fd, buf, count);
+#endif
+}
+
+static ssize_t Pwrite(int fd, const void *buf, size_t count, off_t offset) {
+#if _XOPEN_SOURCE + 0 >= 500 || _POSIX_C_SOURCE + 0 >= 200809L
+    return pwrite(fd, buf, count, offset);
+#else // zipalign doesn't actually need it to be atomic
+    if (lseek(fd, offset, SEEK_SET) == -1)
+        return -1;
+    return write(fd, buf, count);
+#endif
+}
+
 static void GetDosLocalTime(int64_t utcunixts, uint16_t *out_time, uint16_t *out_date) {
-    struct tm tm;
-    localtime_r(&utcunixts, &tm);
-    *out_time = DOS_TIME(tm.tm_hour, tm.tm_min, tm.tm_sec);
-    *out_date = DOS_DATE(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    struct tm *tm;
+    tm = localtime(&utcunixts);
+    *out_time = DOS_TIME(tm->tm_hour, tm->tm_min, tm->tm_sec);
+    *out_date = DOS_DATE(tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
 }
 
 static int NormalizeMode(int mode) {
-    int res = mode & S_IFMT;
+    int res = mode & 0170000;
     if (mode & 0111)
         res |= 0111;
     return res | 0644;
@@ -174,7 +212,7 @@ int main(int argc, char *argv[]) {
         amt = zsize - off;
     }
     static char last64[65536];
-    if (pread(zfd, last64, amt, off) != amt)
+    if (Pread(zfd, last64, amt, off) != amt)
         DieSys(zpath);
 
     // search backwards for the end-of-central-directory record
@@ -184,7 +222,7 @@ int main(int argc, char *argv[]) {
     for (int i = amt - Min(kZipCdirHdrMinSize, kZipCdir64LocatorSize); i >= 0; --i) {
         uint32_t magic = ZIP_READ32(last64 + i);
         if (magic == kZipCdir64LocatorMagic && i + kZipCdir64LocatorSize <= amt &&
-            pread(zfd, last64, kZipCdir64HdrMinSize, ZIP_LOCATE64_OFFSET(last64 + i)) ==
+            Pread(zfd, last64, kZipCdir64HdrMinSize, ZIP_LOCATE64_OFFSET(last64 + i)) ==
                 (long)kZipCdir64HdrMinSize &&
             ZIP_READ32(last64) == kZipCdir64HdrMagic &&
             ZIP_CDIR64_RECORDS(last64) == ZIP_CDIR64_RECORDSONDISK(last64) &&
@@ -210,7 +248,7 @@ int main(int argc, char *argv[]) {
     // read central directory
     size_t cdirsize = amt;
     uint8_t *cdir = Malloc(cdirsize);
-    if (pread(zfd, cdir, cdirsize, off) != cdirsize)
+    if (Pread(zfd, cdir, cdirsize, off) != cdirsize)
         DieSys(zpath);
 
     // create array of zip entry names
@@ -261,7 +299,9 @@ int main(int argc, char *argv[]) {
     cdirsize = new_index;
     cnt = new_count;
 
-    // add inputs
+    // 𝔞𝔡𝔡 inputs
+    uint8_t *iobuf = Valloc(CHUNK);
+    uint8_t *cdbuf = Valloc(CHUNK);
     for (int i = optind; i < argc; ++i) {
 
         // open input file
@@ -269,7 +309,9 @@ int main(int argc, char *argv[]) {
         const char *path = argv[i];
         if ((fd = open(path, O_RDONLY)) == -1)
             DieSys(path);
+#ifdef POSIX_FADV_SEQUENTIAL
         posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
 
         // get information about file
         uint64_t size;
@@ -322,17 +364,17 @@ int main(int argc, char *argv[]) {
         ssize_t rc;
         uint32_t crc = 0;
         uint64_t compsize = 0;
-        _Alignas(4096) static uint8_t iobuf[CHUNK];
-        _Alignas(4096) static uint8_t cdbuf[CHUNK];
         for (off_t i = 0; i < size; i += rc) {
             // read chunk
-            if ((rc = pread(fd, iobuf, Min(size, CHUNK), i)) <= 0)
+            if ((rc = Pread(fd, iobuf, Min(size, CHUNK), i)) <= 0)
                 DieSys(path);
+#ifdef POSIX_FADV_DONTNEED
             posix_fadvise(fd, i, Min(size, CHUNK), POSIX_FADV_DONTNEED);
+#endif
             crc = crc32(crc, iobuf, rc);
             if (!flag_level) {
                 // write uncompressed chunk to output
-                if (pwrite(zfd, iobuf, rc, zsize + hdrlen + compsize) != rc)
+                if (Pwrite(zfd, iobuf, rc, zsize + hdrlen + compsize) != rc)
                     DieSys(zpath);
                 compsize += rc;
             } else {
@@ -352,7 +394,7 @@ int main(int argc, char *argv[]) {
                         break;
                     }
                     ssize_t have = CHUNK - zs.avail_out;
-                    if (pwrite(zfd, cdbuf, have, zsize + hdrlen + compsize) != have)
+                    if (Pwrite(zfd, cdbuf, have, zsize + hdrlen + compsize) != have)
                         DieSys(zpath);
                     compsize += have;
                 } while (!zs.avail_out);
@@ -377,7 +419,7 @@ int main(int argc, char *argv[]) {
         p = ZIP_WRITE32(p, 0xffffffffu); // uncompressed size
         p = ZIP_WRITE16(p, namlen);
         p = ZIP_WRITE16(p, extlen);
-        p = mempcpy(p, name, namlen);
+        p = MempCpy(p, name, namlen);
 
         p = ZIP_WRITE16(p, kZipExtraZip64);
         p = ZIP_WRITE16(p, 8 + 8);
@@ -386,7 +428,7 @@ int main(int argc, char *argv[]) {
 
         if (p != lochdr + hdrlen)
             abort();
-        if (pwrite(zfd, lochdr, hdrlen, zsize) != hdrlen)
+        if (Pwrite(zfd, lochdr, hdrlen, zsize) != hdrlen)
             DieSys(zpath);
         free(lochdr);
 
@@ -415,7 +457,7 @@ int main(int argc, char *argv[]) {
         p = ZIP_WRITE16(p, kZipIattrBinary);
         p = ZIP_WRITE32(p, NormalizeMode(st.st_mode) << 16); // external file attributes
         p = ZIP_WRITE32(p, 0xffffffffu); // lfile offset
-        p = mempcpy(p, name, namlen);
+        p = MempCpy(p, name, namlen);
 
         p = ZIP_WRITE16(p, kZipExtraZip64);
         p = ZIP_WRITE16(p, 8 + 8 + 8);
@@ -435,9 +477,11 @@ int main(int argc, char *argv[]) {
         if (flag_verbose)
             fprintf(stderr, "%s -> %s\n", path, name);
     }
+    free(iobuf);
+    free(cdbuf);
 
     // write out central directory
-    if (pwrite(zfd, cdir, cdirsize, zsize) != cdirsize)
+    if (Pwrite(zfd, cdir, cdirsize, zsize) != cdirsize)
         DieSys(zpath);
     free(cdir);
 
@@ -468,7 +512,7 @@ int main(int argc, char *argv[]) {
     p = ZIP_WRITE16(p, 0); // comment length
     if (p != eocd + sizeof(eocd))
         abort();
-    if (pwrite(zfd, eocd, sizeof(eocd), zsize + cdirsize) != sizeof(eocd))
+    if (Pwrite(zfd, eocd, sizeof(eocd), zsize + cdirsize) != sizeof(eocd))
         DieSys(zpath);
 
     // close output
