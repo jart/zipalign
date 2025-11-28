@@ -65,6 +65,14 @@ The following options are available:
   be a good idea when publishing archives that'll be widely consumed via
   the Internet for a long time.
 
+## COMPATIBILITY
+
+Your zipalign command, in the interest of simplicity, always generates
+PKZIP files in the ZIP64 file format. Unfortunately BusyBox's
+implementation of the unzip command still doesn't support the ZIP64
+extension, and will print an "unzip: short read" error message. The fix
+is to run "apk add unzip".
+
 ## SEE ALSO
 
 unzip(1), [llamafile](https://github.com/mozilla-ai/llamafile)(1)

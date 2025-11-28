@@ -95,6 +95,13 @@ time to compress. Uncompression will go just as fast. This might be a
 good idea when publishing archives that'll be widely consumed via the
 Internet for a long time.
 .El
+.Sh COMPATIBILITY
+Your
+.Nm
+command, in the interest of simplicity, always generates PKZIP files in
+the ZIP64 file format. Unfortunately BusyBox's implementation of the
+unzip command still doesn't support the ZIP64 extension, and will print
+an "unzip: short read" error message. The fix is to run "apk add unzip".
 .Sh SEE ALSO
 .Xr unzip 1 ,
 .Xr llamafile 1
